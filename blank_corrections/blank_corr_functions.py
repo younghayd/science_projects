@@ -69,15 +69,37 @@ def blank_corr_050223(input_name, date_bound_input, num_list):
     stds_hist = pd.read_excel(r'I:\C14Data\C14_blank_corrections_dev\TW{}standards.xlsx'.format(input_name)).dropna(subset='Date Run').reset_index(drop=True)  # Read in the standards associated with it.
     stds_hist = stds_hist.dropna(subset='Ratio to standard').reset_index(drop=True)
     # READ IN R NUMBER REFERENCE
-    refs = pd.read_excel(r'I:\C14Data\C14_blank_corrections_dev\Pretreatment_reference2.xlsx', skiprows=6)  # Grab a small file I made that associates samples types to R numbers for correction
+
+    """
+    The new TW____.xlsx file imported from RLIMS (df) will have the following columns:
+    Job#, R#, Order, Process Status, Sample Category, Size, Sample Type (or something), and full sample description (
+    combination of category, size, and type 
+    """
+    refs = pd.read_excel(r'I:\C14Data\C14_blank_corrections_dev\Cat_names.xlsx'.format(
+             input_name))
+    # refs = pd.read_excel(r'I:\C14Data\C14_blank_corrections_dev\Pretreatment_reference2.xlsx', skiprows=6)  # Grab a small file I made that associates samples types to R numbers for correction
+
+###############################
+#This block needs to be changed
+
+
+
 
     # READ IN THIS WHEEL'S PRETREATMENTS
-    pretreats = pd.read_excel(r'I:\C14Data\C14_blank_corrections_dev\TW{}_PreTreatments.xlsx'.format(
-        input_name))  # Grab a small file I made that associates samples types to R numbers for correction
+    # Don't need this anymore, needs to read in category in calculation
+    # pretreats = pd.read_excel(r'I:\C14Data\C14_blank_corrections_dev\TW{}_PreTreatments.xlsx'.format(
+    #     input_name))  # Grab a small file I made that associates samples types to R numbers for correction
 
     # MERGE PRETREATMENTS AND DATA:
-    df = pd.merge(df, pretreats, on='Job')
-    df.to_excel(r'I:\C14Data\C14_blank_corrections_dev\Refscheckwooo.xlsx', sheet_name='Sheet_name_1')
+    # df = pd.merge(df, pretreats, on='Job')
+    # df.to_excel(r'I:\C14Data\C14_blank_corrections_dev\Refscheckwooo.xlsx', sheet_name='Sheet_name_1')
+
+    # Instead of outputting "PreTreatments .xlsx file, RLIMS should output TW____CatInCalc.xlsx file which
+    # contains either the category in calculation, or the individual sample information.
+    # Ex: A column for category (unknown, standard, background, or other), a column for size (small or large) an
+    # a column for sample type (AAA, cellulose, air, RP, etc).
+    # The script should then merge this with the data.
+
 
     """
     This next block of code searches the standards extracted from the database, and find the MCC related to each of the items on my "Pretreatment_reference" excel sheet
@@ -98,12 +120,21 @@ def blank_corr_050223(input_name, date_bound_input, num_list):
     stds_hist = stds_hist.loc[(stds_hist['wtgraph'] > 0.3)]  # Drop everything that is smaller than 0.3 mg.
     stds_hist = stds_hist.loc[(stds_hist['Ratio to standard'] < 0.1)]  # Drop all blanks that are clearly WAY too high
 
-    df = df.loc[(df['Category In Calculation'] != 'Background Test')]  # Drop all background tests from the sample data
-    df = df.loc[(df['Category In Calculation'] != 'Background Organic')]  # Drop all background organics from the sample data
-    df = df.loc[(df['Category In Calculation'] != 'Background Inorganic')]  # Drop all background organics from the sample data
-    df = df.loc[(df['Category In Calculation'] != 'Background Air')]  # Drop all background organics from the sample data
+    """
+    # Remove all backgrounds from sample data
+    # This is based on assumption that there will be a "Sample Category" for background, standard, unknown, etc,
+    # a "size category" for small vs large, and a "sample type" for AAA, Cellulose, etc.
+    # We can filter based on Sample category to get rid of backgrounds.
+    """
+    df = df.loc[(df['Sample Category'] != "Background")]
 
-    # THIS BLOCK REMOVES ANY STANDARDS YOU DON"T WANT
+    # # Need to edit this part
+    # df = df.loc[(df['Category In Calculation'] != 'Background Test')]  # Drop all background tests from the sample data
+    # df = df.loc[(df['Category In Calculation'] != 'Background Organic')]  # Drop all background organics from the sample data
+    # df = df.loc[(df['Category In Calculation'] != 'Background Inorganic')]  # Drop all background organics from the sample data
+    # df = df.loc[(df['Category In Calculation'] != 'Background Air')]  # Drop all background organics from the sample data
+
+    # THIS BLOCK REMOVES ANY STANDARDS YOU DON'T WANT
     for i in range(len(num_list)):
         x = num_list[i]
         x = int(x)
@@ -119,18 +150,36 @@ def blank_corr_050223(input_name, date_bound_input, num_list):
     mcc_array = []
     mcc_1sigma_array = []
     stringarray = []
+    TWarray = []
     stds_dataframe = pd.DataFrame({})
 
-    # ITERATE THROUGH PRETREATMENT_REFERENCE2
-    for i in range(0, len(refs)):
-        # GRAB FIRST FOR OF PRETREATMENT REFERENCE LIST
-        ref_row = refs.iloc[i]  # grab the first row of Pretreatment Reference list
+    # ITERATE THROUGH CATEGORIES IN CALCULATION
+
+    selected_refs = refs[refs['Category Names'].isin(df["Category in Calculation"])]
+
+    for i in range(0, len(selected_refs)):
+
+        #GRAB FIRST ROW OF REFERENCE LIST
+        ref_row = refs.iloc[i]
+
+        # # GRAB FIRST FOR OF PRETREATMENT REFERENCE LIST
+        # ref_row = refs.iloc[i]  # grab the first row of Pretreatment Reference list
 
         # GRAB THE R NUMBER AS A VARIABLE
         this_R = (ref_row['R number to correct from'])
 
         # SEARCH HISTORICAL STANDARDS FOR THIS R#
         current_standards = stds_hist.loc[(stds_hist['R_number'] == this_R)]
+
+
+
+##############################
+
+
+
+
+
+
 
         # CALCULATE AVERAGE MCC (RTS)
         mcc = np.average(current_standards[
@@ -146,27 +195,37 @@ def blank_corr_050223(input_name, date_bound_input, num_list):
 
         # now I need to add the tilda's to tell which standards were used in each case
         strings = ""
+        TW_strings = ""
+
         TPs = current_standards['TP'].reset_index(drop=True)
+        TWs = current_standards['TW'].reset_index(drop=True)
+
         for m in range(len(TPs)):
             q_o = TPs[m]
+            tw = TWs[m]
             strings = strings + str(int(q_o)) + str("\u007e")
+            TW_strings = TW_strings + str(int(tw)) + str("\u007e")
         stringarray.append(strings)
+        TWarray.append(TW_strings)
 
-    refs['MCC'] = mcc_array
-    refs['MCC_1sigma'] = mcc_1sigma_array
-    refs['Stds_used'] = stringarray
-    refs = refs.drop_duplicates(subset='R number to correct from')
-    refs = refs.rename(columns={"Pre-treatment Type": "Process Name"})
-    refs.to_excel(f'I:\C14Data\C14_blank_corrections_dev\PythonOutput\TW{input_name}_Refscheck.xlsx')
+
+    selected_refs['MCC'] = mcc_array
+    selected_refs['MCC_1sigma'] = mcc_1sigma_array
+    selected_refs['Stds_used'] = stringarray
+    selected_refs['TW_used'] = TWarray
+    # selected_refs = selected_refs.drop_duplicates(subset='R number to correct from')
+    selected_refs = selected_refs.rename(columns={"Category Names": "Category in Calculation"})
+    selected_refs.to_excel(f'I:\C14Data\C14_blank_corrections_dev\PythonOutput\TW{input_name}_Refscheck.xlsx')
     df.to_excel(f'I:\C14Data\C14_blank_corrections_dev\PythonOutput\TW{input_name}_testair.xlsx')
-    results = pd.merge(df, refs, on='Process Name')
+    results = pd.merge(df, refs, on='Category in Calculation')
     results.to_excel(r'I:\C14Data\C14_blank_corrections_dev\results_test.xlsx')
 
-    df_condensed = results[['TP', 'MCC', 'MCC_1sigma', 'Stds_used']]
+    df_condensed = results[['TW_used','TP', 'MCC', 'MCC_1sigma', 'Stds_used']]
 
     df_condensed = df_condensed.rename(columns={'MCC': 'rts_bl_av',
                                                 'MCC_1sigma': 'rts_bl_av_error',
-                                                'Standards used': 'TPs Blanks'})
+                                                'Stds used': 'TPs Blanks',
+                                                'TW_used': 'TWs_blanks'})
 
     results.to_csv(r'I:\C14Data\C14_blank_corrections_dev\PythonOutput\TW{}_results.csv'.format(input_name))
     df_condensed.to_csv(r'I:/C14Data/C14_blank_corrections_dev/RLIMS_import/TW{}_reimport.csv'.format(input_name))
